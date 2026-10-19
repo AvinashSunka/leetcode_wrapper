@@ -133,6 +133,86 @@ async function fetchProblemsByPattern(patternName, limit, skip) {
     return jsonResponse?.data?.problemsetQuestionList?.questions || [];
 }
 
+async function fetchDailyChallenge() {
+    const url = 'https://leetcode.com/graphql';
+    const payload = {
+        query: `
+            query questionOfToday {
+                activeDailyCodingChallengeQuestion {
+                    date
+                    userStatus
+                    link
+                    question {
+                        questionId
+                        title
+                        titleSlug
+                        difficulty
+                        topicTags {
+                            name
+                            slug
+                        }
+                    }
+                }
+            }
+        `
+    };
+
+    const leetcodeResponse = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!leetcodeResponse.ok) {
+        throw new Error(`LeetCode Daily Challenge HTTP Error: ${leetcodeResponse.status}`);
+    }
+
+    const jsonResponse = await leetcodeResponse.json();
+    const challengeData = jsonResponse?.data?.activeDailyCodingChallengeQuestion;
+
+    if (!challengeData || !challengeData.question) {
+        return null;
+    }
+
+    return {
+        date: challengeData.date,
+        link: challengeData.link,
+        userStatus: challengeData.userStatus,
+        ...challengeData.question
+    };
+}
+
+async function handleDailyChallengeRequest(req, res) {
+    try {
+        const challenge = await fetchDailyChallenge();
+
+        if (!challenge) {
+            return res.status(404).json({
+                success: false,
+                message: 'Daily challenge is not available right now.'
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            date: challenge.date,
+            data: challenge,
+            question: challenge
+        });
+    } catch (error) {
+        console.error('Error fetching daily challenge:', error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve the daily challenge from LeetCode',
+            error: error.message
+        });
+    }
+}
+
 async function handlePatternRequest(req, res) {
     const patternName = getPatternName(req);
     const limit = parseInt(req.query.limit) || 1000;
@@ -180,6 +260,7 @@ async function handlePatternRequest(req, res) {
     }
 }
 
+app.get('/api/daily', handleDailyChallengeRequest);
 app.get('/api/problems', handlePatternRequest);
 app.get('/api/problems/:pattern', handlePatternRequest);
 app.get('/api/problems/:topic', handlePatternRequest);
